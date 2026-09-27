@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Business {
+  id        String   @id @default(cuid())
+  name      String   @default("BREWW 1671")
+  logoUrl   String?
+  email     String?  @default("founders@breww1671.com")
+  phone     String?  @default("+91 98765 43210")
+  address   String?  @default("Warehouse 4B, Industrial Estate, Bengaluru, Karnataka")
+  currency  String   @default("INR")
+  timezone  String   @default("Asia/Kolkata")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id                  String   @id
+  name                String
+  email               String   @unique
+  role                String   @default("ADMIN")
+  avatarUrl           String?
+  ownershipPercentage Float    @default(50.0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Supplier {
+  id             String          @id @default(cuid())
+  name           String
+  contactPerson  String?
+  email          String?
+  phone          String?
+  address        String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  inventoryItems InventoryItem[]
+}
+
+model InventoryItem {
+  id                    String                 @id @default(cuid())
+  name                  String
+  sku                   String                 @unique
+  category              String                 // Coffee Beans, Packaging, Bottles, Caps, Labels, Filters, Ingredients, Cleaning, Water
+  unit                  String                 // kg, grams, liters, ml, units, boxes, packets
+  currentQuantity       Float                  @default(0)
+  minStock              Float                  @default(0)
+  maxStock              Float?
+  averageCost           Float                  @default(0)
+  currentStockValue     Float                  @default(0)
+  supplierId            String?
+  supplier              Supplier?              @relation(fields: [supplierId], references: [id])
+  storageLocation       String?
+  isActive              Boolean                @default(true)
+  notes                 String?
+  isCoffeeBean          Boolean                @default(false)
+  coffeeBeanDetails     CoffeeBean?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  deletedAt             DateTime?
+  transactions          InventoryTransaction[]
+  productionIngredients ProductionIngredient[]
+  wasteRecords          WasteRecord[]
+}
+
+model CoffeeBean {
+  id                String        @id @default(cuid())
+  inventoryItemId   String        @unique
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  beanName          String
+  origin            String        // e.g. Coorg, Chikmagalur, Brazil, Ethiopia
+  supplier          String
+  roast             String        // Light, Medium, Medium-Dark, Dark
+  beanType          String        // Arabica, Robusta, Blend
+  purchaseDate      DateTime?
+  lotNumber         String?
+  quantityPurchased Float         @default(0)
+  quantityRemaining Float         @default(0)
+  purchaseCost      Float         @default(0)
+  costPerKg         Float         @default(0)
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model InventoryTransaction {
+  id                String         @id @default(cuid())
+  inventoryItemId   String
+  inventoryItem     InventoryItem  @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  type              String         // OPENING_STOCK, PURCHASE, PRODUCTION_CONSUMPTION, WASTE, DAMAGE, ADJUSTMENT, RETURN
+  quantity          Float          // positive for in, negative for out
+  unit              String
+  unitCost          Float          @default(0)
+  totalCost         Float          @default(0)
+  reference         String?        // PO number, Batch number, Waste ticket
+  productionBatchId String?
+  productionBatch   ProductionBatch? @relation(fields: [productionBatchId], references: [id])
+  wasteRecordId     String?
+  partnerId         String?        // acting partner
+  notes             String?
+  date              DateTime       @default(now())
+  createdAt         DateTime       @default(now())
+}
+
+model Product {
+  id                String             @id @default(cuid())
+  sku               String             @unique
+  name              String             // e.g. Original Cold Brew 180ml
+  category          String             @default("Cold Brew")
+  variant           String             // Original, Barrel Aged, Cranberry, etc.
+  size              String             // 180ml, 1L, etc.
+  unit              String             @default("bottles")
+  sellingPrice      Float              @default(0)
+  standardCost      Float              @default(0)
+  minStock          Float              @default(20)
+  isActive          Boolean            @default(true)
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  productionBatches ProductionBatch[]
+  finishedGoodsLots FinishedGoodsLot[]
+  productionOutputs ProductionOutput[]
+  saleItems         SaleItem[]
+}
+
+model FinishedGoodsLot {
+  id                   String                    @id @default(cuid())
+  lotNumber            String                    @unique // e.g. FG-2026-001
+  productId            String
+  product              Product                   @relation(fields: [productId], references: [id])
+  productionBatchId    String?
+  productionBatch      ProductionBatch?          @relation(fields: [productionBatchId], references: [id])
+  productionDate       DateTime                  @default(now())
+  bestBeforeDate       DateTime?
+  expiryDate           DateTime?
+  quantityProduced     Float                     @default(0)
+  quantityAvailable    Float                     @default(0)
+  quantitySold         Float                     @default(0)
+  quantitySampled      Float                     @default(0)
+  quantityWasted       Float                     @default(0)
+  quantityAdjusted     Float                     @default(0)
+  unit                 String                    @default("bottles")
+  unitCost             Float                     @default(0)
+  totalProductionCost  Float                     @default(0)
+  status               String                    @default("AVAILABLE") // PRODUCED, AVAILABLE, PARTIALLY_SOLD, SOLD_OUT, EXPIRED, DAMAGED, CLOSED
+  storageLocation      String?                   @default("Cold Storage Room A")
+  notes                String?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  transactions         FinishedGoodsTransaction[]
+  saleItems            SaleItem[]
+  productionOutputs    ProductionOutput[]
+  wasteRecords         WasteRecord[]
+}
+
+model FinishedGoodsTransaction {
+  id                String            @id @default(cuid())
+  lotId             String
+  lot               FinishedGoodsLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  type              String            // PRODUCTION, SALE, SAMPLE, TESTING, WASTE, DAMAGE, ADJUSTMENT, RETURN
+  quantity          Float             // positive for production/return, negative for sale/sample/waste
+  unitCost          Float             @default(0)
+  totalCost         Float             @default(0)
+  reference         String?           // SALE-2026-001, CB-2026-001, CAFE-SAMPLE
+  saleItemId        String?
+  wasteRecordId     String?
+  cafeId            String?
+  partnerId         String?           // who logged it
+  notes             String?
+  date              DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+}
+
+model ProductionBatch {
+  id                  String                 @id @default(cuid())
+  batchNumber         String                 @unique // e.g. CB-2026-001
+  productionDate      DateTime               @default(now())
+  productId           String
+  product             Product                @relation(fields: [productId], references: [id])
+  batchType           String                 @default("COMMERCIAL") // COMMERCIAL, TESTING, RD, SAMPLE, INTERNAL
+  recipe              String?
+  notes               String?
+  status              String                 @default("CONFIRMED") // DRAFT, CONFIRMED, COMPLETED, CANCELLED
+  expectedOutput      Float                  @default(0)
+  actualOutput        Float                  @default(0)
+  testingBottles      Float                  @default(0)
+  commercialBottles   Float                  @default(0)
+  wasteBottles        Float                  @default(0)
+  yieldPercent        Float                  @default(100.0)
+  rawMaterialCost     Float                  @default(0)
+  packagingCost       Float                  @default(0)
+  totalProductionCost Float                  @default(0)
+  costPerUnit         Float                  @default(0)
+  costPerLiter        Float                  @default(0)
+  partnerId           String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  ingredients         ProductionIngredient[]
+  outputs             ProductionOutput[]
+  finishedGoodsLots   FinishedGoodsLot[]
+  inventoryTransactions InventoryTransaction[]
+  wasteRecords        WasteRecord[]
+}
+
+model ProductionIngredient {
+  id                String          @id @default(cuid())
+  productionBatchId String
+  productionBatch   ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  inventoryItemId   String
+  inventoryItem     InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+  quantity          Float
+  unit              String
+  unitCost          Float           @default(0)
+  totalCost         Float           @default(0)
+  notes             String?
+}
+
+model ProductionOutput {
+  id                 String           @id @default(cuid())
+  productionBatchId  String
+  productionBatch    ProductionBatch  @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product          @relation(fields: [productId], references: [id])
+  expectedQuantity   Float            @default(0)
+  actualQuantity     Float            @default(0)
+  commercialQuantity Float            @default(0)
+  testingQuantity    Float            @default(0)
+  wasteQuantity      Float            @default(0)
+  finishedGoodsLotId String?
+  finishedGoodsLot   FinishedGoodsLot? @relation(fields: [finishedGoodsLotId], references: [id])
+  unitCost           Float            @default(0)
+  totalCost          Float            @default(0)
+}
+
+model WasteRecord {
+  id                String            @id @default(cuid())
+  date              DateTime          @default(now())
+  type              String            // RAW_MATERIAL, FINISHED_GOODS
+  inventoryItemId   String?
+  inventoryItem     InventoryItem?    @relation(fields: [inventoryItemId], references: [id])
+  finishedGoodsLotId String?
+  finishedGoodsLot  FinishedGoodsLot? @relation(fields: [finishedGoodsLotId], references: [id])
+  productionBatchId String?
+  productionBatch   ProductionBatch?  @relation(fields: [productionBatchId], references: [id])
+  quantity          Float
+  unit              String
+  estimatedCost     Float             @default(0)
+  reason            String            // Breakage, Spoilage, Failed Quality, Seal Failure, Expired, Taste Off, Other
+  notes             String?
+  partnerId         String?
+  createdAt         DateTime          @default(now())
+}
+
+model Sale {
+  id            String     @id @default(cuid())
+  saleNumber    String     @unique // e.g. SALE-2026-001
+  date          DateTime   @default(now())
+  cafeId        String?
+  cafe          Cafe?      @relation(fields: [cafeId], references: [id])
+  subtotal      Float      @default(0)
+  discount      Float      @default(0)
+  tax           Float      @default(0)
+  total         Float      @default(0)
+  amountPaid    Float      @default(0)
+  paymentStatus String     @default("PAID") // PENDING, PARTIAL, PAID, OVERDUE
+  paymentMethod String     @default("UPI") // UPI, Bank Transfer, Cash, Cheque
+  bottleSize    String?    // e.g. 180ml, 1L, Mixed
+  flavor        String?    // e.g. Classic Cold Brew (100% Arabica), Floral Cold Brew
+  notes         String?
+  partnerId     String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  items         SaleItem[]
+}
+
+model SaleItem {
+  id                 String            @id @default(cuid())
+  saleId             String
+  sale               Sale              @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product           @relation(fields: [productId], references: [id])
+  finishedGoodsLotId String?
+  finishedGoodsLot   FinishedGoodsLot? @relation(fields: [finishedGoodsLotId], references: [id])
+  bottleSize         String?           // 180ml, 1L
+  flavor             String?           // Flavor / Bean name
+  quantity           Float
+  unitPrice          Float
+  discount           Float             @default(0)
+  total              Float
+  unitCost           Float             @default(0)
+  grossMargin        Float             @default(0)
+}
+
+model Expense {
+  id            String           @id @default(cuid())
+  date          DateTime         @default(now())
+  title         String
+  categoryId    String
+  category      ExpenseCategory  @relation(fields: [categoryId], references: [id])
+  amount        Float
+  paidBy        String           // Nishant, Chinmay, Business Account
+  partnerId     String?          // PARTNER_NISHANT or PARTNER_CHINMAY
+  paymentMethod String           @default("UPI") // UPI, Credit Card, Cash, Net Banking
+  vendor        String?
+  receiptUrl    String?
+  notes         String?
+  isSettled     Boolean          @default(false)
+  settlementId  String?
+  settlement    Settlement?      @relation(fields: [settlementId], references: [id])
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model ExpenseCategory {
+  id                  String    @id @default(cuid())
+  name                String    @unique
+  color               String    @default("#64748b")
+  isProductionRelated Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  expenses            Expense[]
+}
+
+model Settlement {
+  id                String    @id @default(cuid())
+  settlementNumber  String    @unique // e.g. SETTLE-2026-001
+  date              DateTime  @default(now())
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  totalExpenses     Float     @default(0)
+  nishantPaid       Float     @default(0)
+  chinmayPaid       Float     @default(0)
+  nishantExpected   Float     @default(0)
+  chinmayExpected   Float     @default(0)
+  settlementAmount  Float     @default(0)
+  payerPartnerId    String?   // who owes money
+  receiverPartnerId String?   // who receives money
+  status            String    @default("PENDING") // PENDING, SETTLED
+  settledAt         DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  expenses          Expense[]
+}
+
+model Cafe {
+  id                     String              @id @default(cuid())
+  name                   String
+  contactPerson          String?
+  phone                  String?
+  email                  String?
+  instagram              String?
+  website                String?
+  location               String?
+  city                   String?             @default("Bengaluru")
+  area                   String?             // Indiranagar, Koramangala, HSR Layout, etc.
+  leadSource             String?             // In-Person Visit, Instagram, Referral, Cold Call
+  status                 String              @default("NEW") // NEW, CONTACTED, INTERESTED, SAMPLE_SENT, FOLLOW_UP, NEGOTIATION, CUSTOMER, NOT_INTERESTED, LOST
+  estMonthlyRequirement Float?              // in bottles or liters
+  productInterest        String?             // Original 180ml, Barrel Aged, 1L Bulk
+  lastContacted          DateTime?
+  nextFollowUp           DateTime?
+  pitchDate              DateTime?
+  pitchNotes             String?
+  rejectionReason        String?
+  notes                  String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  sales                  Sale[]
+  statusHistory          CafeStatusHistory[]
+  followUps              FollowUp[]
+}
+
+model CafeStatusHistory {
+  id        String   @id @default(cuid())
+  cafeId    String
+  cafe      Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  oldStatus String?
+  newStatus String
+  changedBy String?
+  notes     String?
+  timestamp DateTime @default(now())
+}
+
+model FollowUp {
+  id        String    @id @default(cuid())
+  cafeId    String
+  cafe      Cafe      @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  title     String
+  dueDate   DateTime
+  status    String    @default("PENDING") // PENDING, COMPLETED
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  timestamp   DateTime @default(now())
+  userId      String?
+  partnerName String?
+  action      String   // PRODUCTION_CONFIRMED, SALE_CREATED, SAMPLE_ISSUED, WASTE_LOGGED, EXPENSE_ADDED, SETTLEMENT_RESOLVED, etc.
+  entity      String   // ProductionBatch, FinishedGoodsLot, Sale, Expense, Cafe, InventoryItem
+  entityId    String?
+  oldValue    String?
+  newValue    String?
+  details     String?
+}
+
+model Settings {
+  id                 String   @id @default(cuid())
+  businessName       String   @default("BREWW 1671")
+  logoUrl            String?
+  email              String?  @default("founders@breww1671.com")
+  phone              String?  @default("+91 98765 43210")
+  address            String?  @default("Bengaluru, Karnataka")
+  currency           String   @default("INR")
+  timezone           String   @default("Asia/Kolkata")
+  alertThresholdDays Int      @default(15) // for expiry alerts
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
