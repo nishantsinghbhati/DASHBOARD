@@ -26,13 +26,22 @@ import {
   ArrowRight,
   X,
   CreditCard,
+  Sliders,
+  Droplets,
+  Calculator,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/calculations/inventory';
 import { formatDate } from '@/lib/utils';
 import { recordSale, updateSale, updateSalePayment, deleteSale } from '@/lib/actions/sales';
 import { addCafe } from '@/lib/actions/cafes';
 import { usePartner } from '@/lib/auth/partner-client';
-import { parseCafeRates } from '@/lib/calculations/cafe-rates';
+import {
+  parseCafeRates,
+  BREW_PRICING,
+  BREW_LIST,
+  getBrewPricing,
+  calculateBrewUnitPrice,
+} from '@/lib/calculations/cafe-rates';
 
 interface CafeItem {
   id: string;
@@ -95,7 +104,7 @@ export function SalesLedgerClient({
   const { partner } = usePartner();
   const [sales, setSales] = useState<SaleRecord[]>(initialSales);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sizeFilter, setSizeFilter] = useState<'ALL' | '180ml' | '1L'>('ALL');
+  const [sizeFilter, setSizeFilter] = useState<'ALL' | '180ml' | '1L' | 'CUSTOM'>('ALL');
   const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'PARTIAL'>('ALL');
   const [selectedCafeFilter, setSelectedCafeFilter] = useState('ALL');
 
@@ -108,14 +117,16 @@ export function SalesLedgerClient({
   // New Sale Form State
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
   const [formCafeId, setFormCafeId] = useState('');
-  const [formBottleSize, setFormBottleSize] = useState<'180ml' | '1L'>('180ml');
+  const [formServingFormat, setFormServingFormat] = useState<'180ml' | '1L' | 'CUSTOM'>('180ml');
+  const [formCustomVolume, setFormCustomVolume] = useState('500');
+  const [formCustomVolumeUnit, setFormCustomVolumeUnit] = useState<'ml' | 'L'>('ml');
   const [formFlavor, setFormFlavor] = useState('Classic Cold Brew (100% Arabica)');
   const [formCustomFlavor, setFormCustomFlavor] = useState('');
   const [isCustomFlavor, setIsCustomFlavor] = useState(false);
   const [formQuantity, setFormQuantity] = useState('20');
-  const [formUnitPrice, setFormUnitPrice] = useState('120');
+  const [formUnitPrice, setFormUnitPrice] = useState('130');
   const [formPaymentStatus, setFormPaymentStatus] = useState<'PAID' | 'PENDING' | 'PARTIAL'>('PAID');
-  const [formAmountPaid, setFormAmountPaid] = useState('2400');
+  const [formAmountPaid, setFormAmountPaid] = useState('2600');
   const [formPaymentMethod, setFormPaymentMethod] = useState('UPI');
   const [formNotes, setFormNotes] = useState('');
   const [formLoading, setFormLoading] = useState(false);
@@ -135,10 +146,10 @@ export function SalesLedgerClient({
   const [editBottleSize, setEditBottleSize] = useState('180ml');
   const [editFlavor, setEditFlavor] = useState('Classic Cold Brew');
   const [editQuantity, setEditQuantity] = useState('1');
-  const [editUnitPrice, setEditUnitPrice] = useState('120');
+  const [editUnitPrice, setEditUnitPrice] = useState('130');
   const [editDiscount, setEditDiscount] = useState('0');
   const [editPaymentStatus, setEditPaymentStatus] = useState<'PAID' | 'PENDING' | 'PARTIAL' | 'OVERDUE'>('PAID');
-  const [editAmountPaid, setEditAmountPaid] = useState('120');
+  const [editAmountPaid, setEditAmountPaid] = useState('130');
   const [editPaymentMethod, setEditPaymentMethod] = useState('UPI');
   const [editNotes, setEditNotes] = useState('');
   const [editLoading, setEditLoading] = useState(false);
@@ -158,6 +169,8 @@ export function SalesLedgerClient({
     let totalPending = 0;
     let count180ml = 0;
     let count1L = 0;
+    let countCustom = 0;
+    let totalLiters = 0;
 
     sales.forEach((s) => {
       totalRevenue += s.total;
@@ -166,14 +179,27 @@ export function SalesLedgerClient({
       totalPending += Math.max(0, s.total - paid);
 
       s.items.forEach((item) => {
-        const size = item.bottleSize || (item.product?.size) || s.bottleSize || '';
-        if (size.toLowerCase().includes('180') || size.toLowerCase().includes('180ml')) {
+        const size = (item.bottleSize || (item.product?.size) || s.bottleSize || '').toLowerCase();
+        if (size.includes('180')) {
           count180ml += item.quantity;
-        } else if (size.toLowerCase().includes('1l') || size.toLowerCase().includes('1 liter') || size.toLowerCase().includes('1000')) {
+          totalLiters += item.quantity * 0.18;
+        } else if (size.includes('1l') || size.includes('1 liter') || size.includes('1000')) {
           count1L += item.quantity;
+          totalLiters += item.quantity * 1.0;
         } else {
-          // fallback
-          count180ml += item.quantity;
+          countCustom += item.quantity;
+          const match = size.match(/([\d.]+)\s*(ml|l)/i);
+          if (match) {
+            const val = parseFloat(match[1]);
+            const unit = match[2].toLowerCase();
+            if (unit === 'l') {
+              totalLiters += item.quantity * val;
+            } else {
+              totalLiters += (item.quantity * val) / 1000;
+            }
+          } else {
+            totalLiters += item.quantity * 0.18;
+          }
         }
       });
     });
@@ -184,6 +210,8 @@ export function SalesLedgerClient({
       totalPending,
       count180ml,
       count1L,
+      countCustom,
+      totalLiters,
       totalOrders: sales.length,
     };
   }, [sales]);
@@ -192,10 +220,9 @@ export function SalesLedgerClient({
   const flavorOptions = useMemo(() => {
     const list: string[] = [
       'Classic Cold Brew (100% Arabica)',
-      'Floral Cold Brew (Chikmagalur Arabica)',
-      'Single Origin Cerrado Cold Brew',
-      'Oak Barrel Aged Cold Brew',
-      'Vanilla Infused Cold Brew',
+      'Floral Cold Brew',
+      'Rum Infused Barrel Cold Brew',
+      'Whiskey Infused Barrel Cold Brew',
     ];
 
     coffeeBeans.forEach((bean) => {
@@ -208,28 +235,51 @@ export function SalesLedgerClient({
     return list;
   }, [coffeeBeans]);
 
-  // Handle bottle size change & update unit price according to agreed cafe rates
-  const handleBottleSizeSelect = (size: '180ml' | '1L') => {
-    setFormBottleSize(size);
-    const selectedCafe = cafes.find((c) => c.id === formCafeId);
-    const rates = selectedCafe ? parseCafeRates(selectedCafe.notes) : { rate180ml: 120, rate1L: 480 };
-    const applicableRate = size === '180ml' ? rates.rate180ml : rates.rate1L;
-    setFormUnitPrice(String(applicableRate));
+  const effectiveFlavor = isCustomFlavor
+    ? formCustomFlavor.trim() || 'Custom Cold Brew'
+    : formFlavor;
+
+  const resolvedCustomMl =
+    formCustomVolumeUnit === 'L'
+      ? (parseFloat(formCustomVolume) || 0) * 1000
+      : parseFloat(formCustomVolume) || 0;
+
+  const activePricing = getBrewPricing(effectiveFlavor);
+
+  // Recalculate price whenever format, flavor, or custom volume changes
+  const updateCalculatedPrice = (
+    format: '180ml' | '1L' | 'CUSTOM',
+    flavorName: string,
+    customMl: number
+  ) => {
+    const calculated = calculateBrewUnitPrice(flavorName, format, customMl);
+    setFormUnitPrice(String(calculated));
     const qty = parseFloat(formQuantity) || 0;
-    setFormAmountPaid(String(qty * applicableRate));
+    if (formPaymentStatus === 'PAID') {
+      setFormAmountPaid(String(Math.round(qty * calculated)));
+    }
   };
 
-  // Handle cafe selection & auto-fill that cafe's agreed rates
+  const handleServingFormatSelect = (format: '180ml' | '1L' | 'CUSTOM') => {
+    setFormServingFormat(format);
+    updateCalculatedPrice(format, effectiveFlavor, resolvedCustomMl);
+  };
+
+  const handleFlavorSelect = (selectedFlavor: string) => {
+    setFormFlavor(selectedFlavor);
+    setIsCustomFlavor(false);
+    updateCalculatedPrice(formServingFormat, selectedFlavor, resolvedCustomMl);
+  };
+
+  const handleCustomVolumeUpdate = (vol: string, unit: 'ml' | 'L') => {
+    setFormCustomVolume(vol);
+    setFormCustomVolumeUnit(unit);
+    const ml = unit === 'L' ? (parseFloat(vol) || 0) * 1000 : parseFloat(vol) || 0;
+    updateCalculatedPrice(formServingFormat, effectiveFlavor, ml);
+  };
+
   const handleCafeSelect = (cafeId: string) => {
     setFormCafeId(cafeId);
-    const selectedCafe = cafes.find((c) => c.id === cafeId);
-    if (selectedCafe) {
-      const rates = parseCafeRates(selectedCafe.notes);
-      const applicableRate = formBottleSize === '180ml' ? rates.rate180ml : rates.rate1L;
-      setFormUnitPrice(String(applicableRate));
-      const qty = parseFloat(formQuantity) || 0;
-      setFormAmountPaid(String(qty * applicableRate));
-    }
   };
 
   // Live order calculations for form
@@ -247,8 +297,12 @@ export function SalesLedgerClient({
 
       const sizeMatch =
         sizeFilter === 'ALL' ||
-        (sizeFilter === '180ml' && (s.bottleSize?.includes('180') || s.items.some((i) => i.bottleSize?.includes('180')))) ||
-        (sizeFilter === '1L' && (s.bottleSize?.includes('1L') || s.items.some((i) => i.bottleSize?.includes('1L') || i.bottleSize?.includes('1000'))));
+        (sizeFilter === '180ml' && (s.bottleSize?.includes('180') || s.items.some((i) => (i.bottleSize || '').includes('180')))) ||
+        (sizeFilter === '1L' && (s.bottleSize?.includes('1L') || s.items.some((i) => (i.bottleSize || '').includes('1L') || (i.bottleSize || '').includes('1000')))) ||
+        (sizeFilter === 'CUSTOM' && (
+          (!s.bottleSize?.includes('180') && !s.bottleSize?.includes('1L') && !s.bottleSize?.includes('1000')) ||
+          s.items.some((i) => !(i.bottleSize || '').includes('180') && !(i.bottleSize || '').includes('1L') && !(i.bottleSize || '').includes('1000'))
+        ));
 
       const paymentMatch =
         paymentFilter === 'ALL' || s.paymentStatus === paymentFilter;
@@ -289,7 +343,14 @@ export function SalesLedgerClient({
       ? formCustomFlavor.trim() || 'Custom Cold Brew'
       : formFlavor;
 
-    const total = qty * unitPrice;
+    const resolvedBottleSize =
+      formServingFormat === '180ml'
+        ? '180ml'
+        : formServingFormat === '1L'
+        ? '1L'
+        : `${formCustomVolume}${formCustomVolumeUnit}`;
+
+    const total = Math.round(qty * unitPrice * 100) / 100;
     let paidAmount = 0;
     if (formPaymentStatus === 'PAID') {
       paidAmount = total;
@@ -300,7 +361,7 @@ export function SalesLedgerClient({
     const payload = {
       cafeId: formCafeId || undefined,
       date: formDate,
-      bottleSize: formBottleSize,
+      bottleSize: resolvedBottleSize,
       flavor: finalFlavor,
       paymentStatus: formPaymentStatus,
       amountPaid: paidAmount,
@@ -309,7 +370,7 @@ export function SalesLedgerClient({
       partnerId: partner.id,
       items: [
         {
-          bottleSize: formBottleSize,
+          bottleSize: resolvedBottleSize,
           flavor: finalFlavor,
           quantity: qty,
           unitPrice: unitPrice,
@@ -329,6 +390,9 @@ export function SalesLedgerClient({
       setFormNotes('');
       setFormCustomFlavor('');
       setIsCustomFlavor(false);
+      setFormServingFormat('180ml');
+      setFormUnitPrice('130');
+      setFormAmountPaid('2600');
     } else {
       setFormError(res.error || 'Failed to record sale.');
     }
@@ -503,7 +567,7 @@ export function SalesLedgerClient({
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => {
-              handleBottleSizeSelect('180ml');
+              handleServingFormatSelect('180ml');
               setIsRecordModalOpen(true);
             }}
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
@@ -551,22 +615,22 @@ export function SalesLedgerClient({
           </div>
         </div>
 
-        {/* 1L Bottles Sold */}
+        {/* 1L & Custom Volume Delivered */}
         <div className="p-4 rounded-2xl bg-zinc-900/90 border border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-transparent">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-purple-300 uppercase tracking-wider">
-              1 Litre (1L) Bottles
+              Cold Brew Volume
             </span>
             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              Bulk Pitcher
+              Total Litres
             </span>
           </div>
           <div className="text-xl sm:text-2xl font-black text-purple-400 mt-1 font-mono">
-            {metrics.count1L}{' '}
-            <span className="text-xs font-normal text-zinc-400">litres</span>
+            {metrics.totalLiters.toFixed(1)}{' '}
+            <span className="text-xs font-normal text-zinc-400">L</span>
           </div>
           <div className="text-[10px] text-zinc-400 mt-0.5">
-            Café iced latte &amp; concentrate base
+            {metrics.count1L}x 1L btls {metrics.countCustom > 0 ? `+ ${metrics.countCustom} custom` : ''}
           </div>
         </div>
 
@@ -649,6 +713,16 @@ export function SalesLedgerClient({
             >
               1 Litre
             </button>
+            <button
+              onClick={() => setSizeFilter('CUSTOM')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 ${
+                sizeFilter === 'CUSTOM'
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Custom / ml
+            </button>
           </div>
 
           {/* Payment Status Filter */}
@@ -696,7 +770,7 @@ export function SalesLedgerClient({
             </div>
             <button
               onClick={() => {
-                handleBottleSizeSelect('180ml');
+                handleServingFormatSelect('180ml');
                 setIsRecordModalOpen(true);
               }}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md inline-flex items-center gap-1.5 cursor-pointer"
@@ -721,6 +795,14 @@ export function SalesLedgerClient({
                 acc +
                 s.items
                   .filter((i) => (i.bottleSize || s.bottleSize || '').includes('1L') || (i.bottleSize || s.bottleSize || '').includes('1000'))
+                  .reduce((iAcc, item) => iAcc + item.quantity, 0),
+              0
+            );
+            const dateCustom = dateSales.reduce(
+              (acc, s) =>
+                acc +
+                s.items
+                  .filter((i) => !(i.bottleSize || s.bottleSize || '').includes('180') && !(i.bottleSize || s.bottleSize || '').includes('1L') && !(i.bottleSize || s.bottleSize || '').includes('1000'))
                   .reduce((iAcc, item) => iAcc + item.quantity, 0),
               0
             );
@@ -755,6 +837,11 @@ export function SalesLedgerClient({
                     {date1L > 0 && (
                       <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[11px]">
                         {date1L} btls (1L)
+                      </span>
+                    )}
+                    {dateCustom > 0 && (
+                      <span className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-300 border border-teal-500/20 text-[11px]">
+                        {dateCustom} custom units
                       </span>
                     )}
                     <span className="text-emerald-400 font-bold">
@@ -825,10 +912,15 @@ export function SalesLedgerClient({
                                   <Package className="w-3 h-3 text-purple-400" />
                                   1 Litre Bottle
                                 </span>
-                              ) : (
+                              ) : primarySize.includes('180') ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
                                   <Coffee className="w-3 h-3 text-amber-400" />
                                   180ml Bottle
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                                  <Droplets className="w-3 h-3 text-teal-400" />
+                                  {primarySize} Volume
                                 </span>
                               )}
                             </td>
@@ -1012,17 +1104,17 @@ export function SalesLedgerClient({
                 </div>
               </div>
 
-              {/* BOTTLE SIZE SELECTION (180ml vs 1L) */}
+              {/* SERVING FORMAT SELECTION */}
               <div>
                 <label className="block text-zinc-400 font-semibold mb-2">
-                  1. Bottle Size Selection
+                  1. Serving Format &amp; Volume
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <button
                     type="button"
-                    onClick={() => handleBottleSizeSelect('180ml')}
+                    onClick={() => handleServingFormatSelect('180ml')}
                     className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                      formBottleSize === '180ml'
+                      formServingFormat === '180ml'
                         ? 'bg-amber-500/15 border-amber-500 text-amber-200 shadow-md shadow-amber-950/30 ring-1 ring-amber-500'
                         : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:border-zinc-700'
                     }`}
@@ -1032,76 +1124,260 @@ export function SalesLedgerClient({
                       <Coffee className="w-4 h-4 text-amber-400" />
                     </div>
                     <p className="text-[11px] text-zinc-400 mt-1">
-                      Compact Single-Serve RTD Cold Brew
+                      Ready-to-drink single serve
                     </p>
                     <div className="mt-2 text-xs font-mono font-bold text-amber-400">
-                      Standard: ₹120 / bottle
+                      Bottled: ₹{activePricing.price180ml}
                     </div>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => handleBottleSizeSelect('1L')}
+                    onClick={() => handleServingFormatSelect('1L')}
                     className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                      formBottleSize === '1L'
+                      formServingFormat === '1L'
                         ? 'bg-purple-500/15 border-purple-500 text-purple-200 shadow-md shadow-purple-950/30 ring-1 ring-purple-500'
                         : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:border-zinc-700'
                     }`}
                   >
                     <div className="flex items-center justify-between w-full">
-                      <div className="font-bold text-sm text-zinc-100">1 Litre (1L) Bottle</div>
+                      <div className="font-bold text-sm text-zinc-100">1 Litre (1L)</div>
                       <Package className="w-4 h-4 text-purple-400" />
                     </div>
                     <p className="text-[11px] text-zinc-400 mt-1">
-                      Bulk Pitcher / Barista Concentrate
+                      Bulk pitcher / café base
                     </p>
                     <div className="mt-2 text-xs font-mono font-bold text-purple-400">
-                      Standard: ₹480 / bottle
+                      Rate: ₹{activePricing.price1L}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleServingFormatSelect('CUSTOM')}
+                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                      formServingFormat === 'CUSTOM'
+                        ? 'bg-teal-500/15 border-teal-500 text-teal-200 shadow-md shadow-teal-950/30 ring-1 ring-teal-500'
+                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className="font-bold text-sm text-zinc-100">Custom Volume</div>
+                      <Droplets className="w-4 h-4 text-teal-400" />
+                    </div>
+                    <p className="text-[11px] text-zinc-400 mt-1">
+                      Per-ml auto-pricing
+                    </p>
+                    <div className="mt-2 text-xs font-mono font-bold text-teal-400">
+                      ₹{activePricing.perMlRate}/ml
                     </div>
                   </button>
                 </div>
+
+                {/* Custom Volume Controls */}
+                {formServingFormat === 'CUSTOM' && (
+                  <div className="mt-3 p-3.5 rounded-2xl bg-zinc-900/80 border border-teal-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-teal-300 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5" />
+                        Specify Custom Volume
+                      </span>
+                      <span className="text-[11px] font-mono text-zinc-400">
+                        {resolvedCustomMl} ml total per unit
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <input
+                          type="number"
+                          step="any"
+                          min="1"
+                          required
+                          value={formCustomVolume}
+                          onChange={(e) => handleCustomVolumeUpdate(e.target.value, formCustomVolumeUnit)}
+                          placeholder="e.g. 500"
+                          className="w-full p-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 font-mono font-bold text-sm focus:outline-none focus:border-teal-500"
+                        />
+                      </div>
+                      <div className="flex rounded-xl bg-zinc-950 p-1 border border-zinc-800">
+                        <button
+                          type="button"
+                          onClick={() => handleCustomVolumeUpdate(formCustomVolume, 'ml')}
+                          className={`flex-1 py-1 rounded-lg text-xs font-bold transition-colors ${
+                            formCustomVolumeUnit === 'ml'
+                              ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          ml
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCustomVolumeUpdate(formCustomVolume, 'L')}
+                          className={`flex-1 py-1 rounded-lg text-xs font-bold transition-colors ${
+                            formCustomVolumeUnit === 'L'
+                              ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40'
+                              : 'text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          Litres
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] text-zinc-500 mr-1">Quick Presets:</span>
+                      {[
+                        { label: '250ml', val: '250', unit: 'ml' as const },
+                        { label: '500ml', val: '500', unit: 'ml' as const },
+                        { label: '750ml', val: '750', unit: 'ml' as const },
+                        { label: '1.5L', val: '1.5', unit: 'L' as const },
+                        { label: '2L', val: '2', unit: 'L' as const },
+                        { label: '5L', val: '5', unit: 'L' as const },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => handleCustomVolumeUpdate(preset.val, preset.unit)}
+                          className="px-2 py-0.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-[10px] font-mono text-zinc-300 transition-colors"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* COLD BREW FLAVOR / BEAN SELECTION */}
+              {/* COLD BREW VARIETY SELECTION */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-2">
                   <label className="text-zinc-400 font-semibold">
-                    2. Cold Brew Flavor &amp; Bean Variety
+                    2. Cold Brew Variety &amp; Formula Rates
                   </label>
                   <button
                     type="button"
                     onClick={() => setIsCustomFlavor(!isCustomFlavor)}
-                    className="text-[11px] text-zinc-400 hover:text-zinc-200 underline"
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 underline"
                   >
-                    {isCustomFlavor ? 'Choose from list' : '+ Custom Flavor'}
+                    {isCustomFlavor ? 'Select Standard Variety' : '+ Custom Flavor'}
                   </button>
                 </div>
 
-                {isCustomFlavor ? (
+                {!isCustomFlavor ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[
+                        {
+                          name: 'Classic Cold Brew (100% Arabica)',
+                          short: 'Classic (100% Arabica)',
+                          rate: '₹0.72/ml',
+                          price180: '₹130',
+                          price1L: '₹720',
+                        },
+                        {
+                          name: 'Floral Cold Brew',
+                          short: 'Floral Brew',
+                          rate: '₹0.86/ml',
+                          price180: '₹155',
+                          price1L: '₹860',
+                        },
+                        {
+                          name: 'Rum Infused Barrel Cold Brew',
+                          short: 'Rum Infused Barrel',
+                          rate: '₹1.03/ml',
+                          price180: '₹185',
+                          price1L: '₹1,030',
+                        },
+                        {
+                          name: 'Whiskey Infused Barrel Cold Brew',
+                          short: 'Whiskey Infused Barrel',
+                          rate: '₹1.03/ml',
+                          price180: '₹185',
+                          price1L: '₹1,030',
+                        },
+                      ].map((brew) => {
+                        const isSelected = formFlavor === brew.name;
+                        return (
+                          <button
+                            key={brew.name}
+                            type="button"
+                            onClick={() => handleFlavorSelect(brew.name)}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-emerald-500/15 border-emerald-500 text-emerald-200 ring-1 ring-emerald-500'
+                                : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-xs text-zinc-100">{brew.short}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-950 text-emerald-400 border border-emerald-500/30">
+                                {brew.rate}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-zinc-400 mt-1 flex items-center justify-between font-mono">
+                              <span>180ml: {brew.price180}</span>
+                              <span>1L: {brew.price1L}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Secondary dropdown if user wants bean-specific labels */}
+                    <div className="pt-1">
+                      <select
+                        value={formFlavor}
+                        onChange={(e) => handleFlavorSelect(e.target.value)}
+                        className="w-full p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs font-semibold focus:outline-none focus:border-emerald-500"
+                      >
+                        {flavorOptions.map((flv) => (
+                          <option key={flv} value={flv}>
+                            {flv}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
                   <input
                     type="text"
                     required
-                    placeholder="e.g. 100% Arabica Classic, Floral Chikmagalur, Hazelnut Cold Brew..."
+                    placeholder="e.g. Vanilla Infused, Honey Sun-Dried, Hazelnut..."
                     value={formCustomFlavor}
-                    onChange={(e) => setFormCustomFlavor(e.target.value)}
+                    onChange={(e) => {
+                      setFormCustomFlavor(e.target.value);
+                      const calculated = calculateBrewUnitPrice(
+                        e.target.value.trim() || 'Custom Cold Brew',
+                        formServingFormat,
+                        resolvedCustomMl
+                      );
+                      setFormUnitPrice(String(calculated));
+                    }}
                     className="w-full p-2.5 rounded-xl bg-zinc-900 border border-emerald-500/50 text-zinc-100 font-semibold focus:outline-none"
                   />
-                ) : (
-                  <select
-                    value={formFlavor}
-                    onChange={(e) => setFormFlavor(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-100 font-semibold focus:outline-none focus:border-emerald-500"
-                  >
-                    {flavorOptions.map((flv) => (
-                      <option key={flv} value={flv}>
-                        {flv}
-                      </option>
-                    ))}
-                  </select>
                 )}
-                <span className="text-[10px] text-zinc-400 mt-1 block">
-                  Flavor profiles map automatically to your roasted coffee bean lots.
-                </span>
+
+                {/* FORMULA BANNER */}
+                <div className="mt-2.5 p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-800/40 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Calculator className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-emerald-300 font-medium">
+                      {formServingFormat === '180ml' ? (
+                        <>Fixed Bottled Price: <strong>₹{activePricing.price180ml} / 180ml bottle</strong> (₹{activePricing.perMlRate}/ml baseline)</>
+                      ) : formServingFormat === '1L' ? (
+                        <>Bulk Pitcher Rate: <strong>1,000 ml × ₹{activePricing.perMlRate}/ml = ₹{activePricing.price1L}</strong></>
+                      ) : (
+                        <>Volume Pricing: <strong>{resolvedCustomMl} ml × ₹{activePricing.perMlRate}/ml = ₹{calculateBrewUnitPrice(effectiveFlavor, 'CUSTOM', resolvedCustomMl)}</strong></>
+                      )}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-400 hidden sm:inline">
+                    Auto-calculated
+                  </span>
+                </div>
               </div>
 
               {/* Quantity & Unit Price */}
@@ -1142,9 +1418,14 @@ export function SalesLedgerClient({
                 </div>
 
                 <div>
-                  <label className="block text-zinc-400 font-semibold mb-1.5">
-                    Unit Price (₹ / bottle)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-zinc-400 font-semibold">
+                      Unit Price (₹ / unit)
+                    </label>
+                    <span className="text-[10px] text-emerald-400 font-mono">
+                      Auto-Calculated
+                    </span>
+                  </div>
                   <input
                     type="number"
                     step="0.01"
@@ -1154,10 +1435,15 @@ export function SalesLedgerClient({
                       setFormUnitPrice(e.target.value);
                       const p = parseFloat(e.target.value) || 0;
                       const q = parseFloat(formQuantity) || 0;
-                      setFormAmountPaid(String(q * p));
+                      if (formPaymentStatus === 'PAID') {
+                        setFormAmountPaid(String(Math.round(q * p)));
+                      }
                     }}
                     className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-100 font-mono font-bold focus:outline-none focus:border-emerald-500"
                   />
+                  <span className="text-[10px] text-zinc-400 mt-1 block">
+                    Formula-driven rate. Override if custom rate agreed.
+                  </span>
                 </div>
               </div>
 
@@ -1506,16 +1792,20 @@ export function SalesLedgerClient({
 
                 {/* Bottle Size */}
                 <div>
-                  <label className="block text-zinc-400 font-semibold mb-1">Bottle Format</label>
+                  <label className="block text-zinc-400 font-semibold mb-1">Bottle Format &amp; Volume</label>
                   <select
                     value={editBottleSize}
                     onChange={(e) => setEditBottleSize(e.target.value)}
                     className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-200 focus:outline-none focus:border-amber-500"
                   >
-                    <option value="180ml">180ml Glass Bottle (Ready-to-Drink)</option>
-                    <option value="1L">1L Glass Bottle (Commercial Café Dispense)</option>
-                    <option value="250ml">250ml Bottle</option>
-                    <option value="500ml">500ml Bottle</option>
+                    <option value="180ml">180ml Glass Bottle (Ready-to-Drink • ₹130-185)</option>
+                    <option value="1L">1L Glass Bottle (Pitcher Dispense • ₹720-1030)</option>
+                    <option value="250ml">250ml Custom Volume</option>
+                    <option value="500ml">500ml Custom Volume</option>
+                    <option value="750ml">750ml Custom Volume</option>
+                    <option value="1.5L">1.5 Litre Dispenser</option>
+                    <option value="2L">2 Litre Dispenser</option>
+                    <option value="5L">5 Litre Commercial Keg</option>
                   </select>
                 </div>
 

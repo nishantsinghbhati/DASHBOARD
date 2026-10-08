@@ -2,6 +2,8 @@ import React from 'react';
 import { prisma } from '@/lib/db/prisma';
 import { PurchasesClient } from '@/components/purchases/PurchasesClient';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: 'Procurement & Purchases | Brew 1671',
   description: 'Track coffee beans, packaging, water, and supply purchases.',

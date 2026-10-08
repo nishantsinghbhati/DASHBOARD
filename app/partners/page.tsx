@@ -14,6 +14,7 @@ import { calculatePartnerSpending } from '@/lib/calculations/partners';
 import { formatDate } from '@/lib/utils';
 import { SettlementEngineClient } from '@/components/partners/SettlementEngineClient';
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function PartnersPage() {

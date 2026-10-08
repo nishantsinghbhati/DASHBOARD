@@ -15,6 +15,7 @@ import { prisma } from '@/lib/db/prisma';
 import { formatCurrency } from '@/lib/calculations/inventory';
 import { formatDate } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function ProductionBatchesPage() {

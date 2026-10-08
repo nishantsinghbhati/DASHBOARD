@@ -23,6 +23,7 @@ import { formatDate, formatDateTime } from '@/lib/utils';
 
 import { BatchActionsClient } from '@/components/production/BatchActionsClient';
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function BatchDetailPage({

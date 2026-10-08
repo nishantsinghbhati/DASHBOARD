@@ -119,6 +119,8 @@ export function CafeAccountsClient({
       let totalPaid = 0;
       let count180ml = 0;
       let count1L = 0;
+      let countCustom = 0;
+      let totalVolumeLiters = 0;
       let latestSaleDate: Date | null = null;
 
       cafe.sales.forEach((s) => {
@@ -132,11 +134,27 @@ export function CafeAccountsClient({
         }
 
         s.items.forEach((item) => {
-          const sz = item.bottleSize || s.bottleSize || '';
-          if (sz.includes('1L') || sz.includes('1000')) {
-            count1L += item.quantity;
-          } else {
+          const sz = (item.bottleSize || s.bottleSize || '').toLowerCase();
+          if (sz.includes('180')) {
             count180ml += item.quantity;
+            totalVolumeLiters += item.quantity * 0.18;
+          } else if (sz.includes('1l') || sz.includes('1000')) {
+            count1L += item.quantity;
+            totalVolumeLiters += item.quantity * 1.0;
+          } else {
+            countCustom += item.quantity;
+            const match = sz.match(/([\d.]+)\s*(ml|l)/i);
+            if (match) {
+              const val = parseFloat(match[1]);
+              const unit = match[2].toLowerCase();
+              if (unit === 'l') {
+                totalVolumeLiters += item.quantity * val;
+              } else {
+                totalVolumeLiters += (item.quantity * val) / 1000;
+              }
+            } else {
+              totalVolumeLiters += item.quantity * 0.18;
+            }
           }
         });
       });
@@ -150,6 +168,8 @@ export function CafeAccountsClient({
         pendingBalance,
         count180ml,
         count1L,
+        countCustom,
+        totalVolumeLiters,
         latestSaleDate,
         orderCount: cafe.sales.length,
       };
@@ -576,19 +596,31 @@ export function CafeAccountsClient({
 
                         {/* Volume Bought */}
                         <td className="py-4 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-2 text-[11px] font-mono">
-                            {cafe.count180ml > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                                {cafe.count180ml}x 180ml
+                          <div className="flex flex-col items-center justify-center gap-1 text-[11px] font-mono">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap max-w-[200px]">
+                              {cafe.count180ml > 0 && (
+                                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                  {cafe.count180ml}x 180ml
+                                </span>
+                              )}
+                              {cafe.count1L > 0 && (
+                                <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                                  {cafe.count1L}x 1L
+                                </span>
+                              )}
+                              {cafe.countCustom > 0 && (
+                                <span className="px-2 py-0.5 rounded bg-teal-500/10 text-teal-300 border border-teal-500/20">
+                                  {cafe.countCustom}x custom
+                                </span>
+                              )}
+                              {cafe.count180ml === 0 && cafe.count1L === 0 && cafe.countCustom === 0 && (
+                                <span className="text-zinc-500">0 btls</span>
+                              )}
+                            </div>
+                            {cafe.totalVolumeLiters > 0 && (
+                              <span className="text-[10px] text-zinc-400">
+                                {cafe.totalVolumeLiters.toFixed(1)} L total
                               </span>
-                            )}
-                            {cafe.count1L > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                                {cafe.count1L}x 1L
-                              </span>
-                            )}
-                            {cafe.count180ml === 0 && cafe.count1L === 0 && (
-                              <span className="text-zinc-500">0 btls</span>
                             )}
                           </div>
                         </td>
